@@ -15,7 +15,16 @@ $memReductDir = Join-Path $desktop 'Mem Reduct'
 $webrbDir = Join-Path $desktop 'webrb'
 $gialapDir = Join-Path $desktop 'gialap'
 
-function Download-File($Url, $OutFile) {
+function Test-Ready($Path, [long]$MinBytes = 1) {
+    return (Test-Path $Path) -and ((Get-Item $Path).Length -ge $MinBytes)
+}
+
+function Download-File($Url, $OutFile, [long]$MinBytes = 1) {
+    if (Test-Ready $OutFile $MinBytes) {
+        $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
+        Write-Host "Da co: $OutFile ($mb MB) - bo qua tai" -ForegroundColor DarkYellow
+        return $false
+    }
     $ProgressPreference = 'SilentlyContinue'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $headers = @{ 'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell' }
@@ -29,7 +38,7 @@ function Download-File($Url, $OutFile) {
             if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
                 $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
                 Write-Host "OK: $OutFile ($mb MB)" -ForegroundColor Green
-                return
+                return $true
             }
         } catch {
             Write-Host "Loi: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -92,26 +101,36 @@ function Resolve-VoltDir {
 }
 
 Write-Host '=== [1/9] Tai VoltX.rar ===' -ForegroundColor Cyan
-$rarPath = Join-Path $env:TEMP 'VoltX.rar'
-Download-File "$baseUrl/VoltX.rar" $rarPath
-if (Test-Path $voltDir) { Remove-Item $voltDir -Recurse -Force }
-Expand-Rar $rarPath $downloads
-Resolve-VoltDir
+if (Test-Path $voltExe) {
+    Write-Host "Da co VoltX - bo qua tai/giai nen" -ForegroundColor DarkYellow
+} else {
+    $rarPath = Join-Path $env:TEMP 'VoltX.rar'
+    Download-File "$baseUrl/VoltX.rar" $rarPath 1000000 | Out-Null
+    if (Test-Path $voltDir) { Remove-Item $voltDir -Recurse -Force }
+    Expand-Rar $rarPath $downloads
+    Resolve-VoltDir
+}
 Write-Host "OK: $voltDir" -ForegroundColor Green
 
 Write-Host '=== [2/9] Tai LDPlayer ===' -ForegroundColor Cyan
 $ldPlayer = Join-Path $downloads 'LDPlayer_9.0.30_Lite_By_Mandu.exe'
-Download-File "$baseUrl/LDPlayer_9.0.30_Lite_By_Mandu.exe" $ldPlayer
+Download-File "$baseUrl/LDPlayer_9.0.30_Lite_By_Mandu.exe" $ldPlayer 500000000 | Out-Null
 Write-Host "OK: $ldPlayer" -ForegroundColor Green
 
 Write-Host '=== [3/9] Tai Mem Reduct ===' -ForegroundColor Cyan
-$memRar = Join-Path $env:TEMP 'MemReduct.rar'
-if (Test-Path $memReductDir) { Remove-Item $memReductDir -Recurse -Force }
-Download-File "$baseUrl/MemReduct.rar" $memRar
-Expand-Rar $memRar $desktop
-Resolve-Folder $desktop $memReductDir 'memreduct.exe' | Out-Null
 $memExe = Join-Path $memReductDir 'memreduct.exe'
-Start-Process -FilePath $memExe -WorkingDirectory $memReductDir
+if (Test-Path $memExe) {
+    Write-Host "Da co Mem Reduct - bo qua tai/giai nen" -ForegroundColor DarkYellow
+} else {
+    $memRar = Join-Path $env:TEMP 'MemReduct.rar'
+    if (Test-Path $memReductDir) { Remove-Item $memReductDir -Recurse -Force }
+    Download-File "$baseUrl/MemReduct.rar" $memRar 100000 | Out-Null
+    Expand-Rar $memRar $desktop
+    Resolve-Folder $desktop $memReductDir 'memreduct.exe' | Out-Null
+}
+if (-not (Get-Process -Name 'memreduct' -ErrorAction SilentlyContinue)) {
+    Start-Process -FilePath $memExe -WorkingDirectory $memReductDir
+}
 Write-Host "OK: $memReductDir (da bat memreduct)" -ForegroundColor Green
 
 Write-Host '=== [4/9] Tai SetVirtualRAM.bat ===' -ForegroundColor Cyan
@@ -126,19 +145,27 @@ Start-Process -FilePath $tattb -Verb RunAs
 Write-Host 'OK: da chay tattb.bat voi quyen Admin' -ForegroundColor Green
 
 Write-Host '=== [6/9] Tai webrb ===' -ForegroundColor Cyan
-$webrbRar = Join-Path $env:TEMP 'webrb.rar'
-if (Test-Path $webrbDir) { Remove-Item $webrbDir -Recurse -Force }
-Download-File "$baseUrl/webrb.rar" $webrbRar
-Expand-Rar $webrbRar $desktop
-Resolve-Folder $desktop $webrbDir 'client_web.exe' | Out-Null
+if (Test-Path (Join-Path $webrbDir 'client_web.exe')) {
+    Write-Host "Da co webrb - bo qua tai/giai nen" -ForegroundColor DarkYellow
+} else {
+    $webrbRar = Join-Path $env:TEMP 'webrb.rar'
+    if (Test-Path $webrbDir) { Remove-Item $webrbDir -Recurse -Force }
+    Download-File "$baseUrl/webrb.rar" $webrbRar 10000000 | Out-Null
+    Expand-Rar $webrbRar $desktop
+    Resolve-Folder $desktop $webrbDir 'client_web.exe' | Out-Null
+}
 Write-Host "OK: $webrbDir" -ForegroundColor Green
 
 Write-Host '=== [7/9] Tai gialap ===' -ForegroundColor Cyan
-$gialapRar = Join-Path $env:TEMP 'gialap.rar'
-if (Test-Path $gialapDir) { Remove-Item $gialapDir -Recurse -Force }
-Download-File "$baseUrl/gialap.rar" $gialapRar
-Expand-Rar $gialapRar $desktop
-Resolve-Folder $desktop $gialapDir 'client_ld.exe' | Out-Null
+if (Test-Path (Join-Path $gialapDir 'client_ld.exe')) {
+    Write-Host "Da co gialap - bo qua tai/giai nen" -ForegroundColor DarkYellow
+} else {
+    $gialapRar = Join-Path $env:TEMP 'gialap.rar'
+    if (Test-Path $gialapDir) { Remove-Item $gialapDir -Recurse -Force }
+    Download-File "$baseUrl/gialap.rar" $gialapRar 10000000 | Out-Null
+    Expand-Rar $gialapRar $desktop
+    Resolve-Folder $desktop $gialapDir 'client_ld.exe' | Out-Null
+}
 Write-Host "OK: $gialapDir" -ForegroundColor Green
 
 Write-Host '=== [8/9] GlobalBasicSettings -> Roblox ===' -ForegroundColor Cyan
