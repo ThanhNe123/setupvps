@@ -16,6 +16,7 @@ $webrbDir = Join-Path $desktop 'webrb'
 $gialapDir = Join-Path $desktop 'gialap'
 
 function Download-File($Url, $OutFile) {
+    $ProgressPreference = 'SilentlyContinue'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $headers = @{ 'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell' }
     $dir = Split-Path $OutFile -Parent
@@ -24,7 +25,7 @@ function Download-File($Url, $OutFile) {
         try {
             Write-Host "Tai: $Url (lan $i/3)"
             if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -Headers $headers -TimeoutSec 600
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -Headers $headers -TimeoutSec 600 -MaximumRedirection 10
             if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
                 $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
                 Write-Host "OK: $OutFile ($mb MB)" -ForegroundColor Green
@@ -33,9 +34,9 @@ function Download-File($Url, $OutFile) {
         } catch {
             Write-Host "Loi: $($_.Exception.Message)" -ForegroundColor Yellow
             if ($i -eq 3) {
-                throw "Tai that bai: $Url`nChua co GitHub Release v1.0? Tao tai: https://github.com/ThanhNe123/setupvps/releases/new?tag=v1.0"
+                throw "Tai that bai: $Url`nKiem tra file da upload len Release v1.0: https://github.com/ThanhNe123/setupvps/releases/tag/v1.0"
             }
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 5
         }
     }
 }
@@ -61,12 +62,21 @@ function Expand-Rar($Archive, $Dest) {
     if ($LASTEXITCODE -ne 0) { throw "Giai nen that bai: $Archive" }
 }
 
-function Get-ExtractedDir($root, $name) {
-    $direct = Join-Path $root $name
-    if (Test-Path $direct) { return $direct }
-    $found = Get-ChildItem -Path $root -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq $name } | Select-Object -First 1
-    if ($found) { return $found.FullName }
-    return $direct
+function Resolve-Folder($searchRoot, $targetDir, $markerFile) {
+    $markerPath = Join-Path $targetDir $markerFile
+    if (Test-Path $markerPath) { return $targetDir }
+    $found = Get-ChildItem -Path $searchRoot -Filter $markerFile -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $found) { throw "Khong tim thay $markerFile trong $searchRoot" }
+    $srcDir = $found.DirectoryName
+    if ($srcDir -ne $targetDir) {
+        if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force }
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        Get-ChildItem -Path $srcDir | Move-Item -Destination $targetDir -Force
+        if ($srcDir -like "$targetDir*" -and $srcDir -ne $targetDir) {
+            Remove-Item $srcDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $targetDir
 }
 
 function Resolve-VoltDir {
@@ -99,12 +109,8 @@ $memRar = Join-Path $env:TEMP 'MemReduct.rar'
 if (Test-Path $memReductDir) { Remove-Item $memReductDir -Recurse -Force }
 Download-File "$baseUrl/MemReduct.rar" $memRar
 Expand-Rar $memRar $desktop
-$memResolved = Get-ExtractedDir $desktop 'Mem Reduct'
-if ($memResolved -ne $memReductDir -and (Test-Path $memResolved)) {
-    Move-Item $memResolved $memReductDir -Force
-}
+Resolve-Folder $desktop $memReductDir 'memreduct.exe' | Out-Null
 $memExe = Join-Path $memReductDir 'memreduct.exe'
-if (-not (Test-Path $memExe)) { throw "Khong tim thay $memExe" }
 Start-Process -FilePath $memExe -WorkingDirectory $memReductDir
 Write-Host "OK: $memReductDir (da bat memreduct)" -ForegroundColor Green
 
@@ -124,10 +130,7 @@ $webrbRar = Join-Path $env:TEMP 'webrb.rar'
 if (Test-Path $webrbDir) { Remove-Item $webrbDir -Recurse -Force }
 Download-File "$baseUrl/webrb.rar" $webrbRar
 Expand-Rar $webrbRar $desktop
-$webrbResolved = Get-ExtractedDir $desktop 'webrb'
-if ($webrbResolved -ne $webrbDir -and (Test-Path $webrbResolved)) {
-    Move-Item $webrbResolved $webrbDir -Force
-}
+Resolve-Folder $desktop $webrbDir 'client_web.exe' | Out-Null
 Write-Host "OK: $webrbDir" -ForegroundColor Green
 
 Write-Host '=== [7/9] Tai gialap ===' -ForegroundColor Cyan
@@ -135,10 +138,7 @@ $gialapRar = Join-Path $env:TEMP 'gialap.rar'
 if (Test-Path $gialapDir) { Remove-Item $gialapDir -Recurse -Force }
 Download-File "$baseUrl/gialap.rar" $gialapRar
 Expand-Rar $gialapRar $desktop
-$gialapResolved = Get-ExtractedDir $desktop 'gialap'
-if ($gialapResolved -ne $gialapDir -and (Test-Path $gialapResolved)) {
-    Move-Item $gialapResolved $gialapDir -Force
-}
+Resolve-Folder $desktop $gialapDir 'client_ld.exe' | Out-Null
 Write-Host "OK: $gialapDir" -ForegroundColor Green
 
 Write-Host '=== [8/9] GlobalBasicSettings -> Roblox ===' -ForegroundColor Cyan
