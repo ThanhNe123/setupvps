@@ -1,0 +1,9 @@
+# File lon - host tren GitHub Releases, khong commit vao git
+*.exe
+*.rar
+r2-upload/
+releases/
+LDPlayer_*
+Mem Reduct/
+webrb/
+gialap/
