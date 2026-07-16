@@ -15,7 +15,33 @@ $memReductDir = Join-Path $desktop 'Mem Reduct'
 $webrbDir = Join-Path $desktop 'webrb'
 $gialapDir = Join-Path $desktop 'gialap'
 
+function Download-File($Url, $OutFile) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $headers = @{ 'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell' }
+    $dir = Split-Path $OutFile -Parent
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    for ($i = 1; $i -le 3; $i++) {
+        try {
+            Write-Host "Tai: $Url (lan $i/3)"
+            if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -Headers $headers -TimeoutSec 600
+            if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
+                $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
+                Write-Host "OK: $OutFile ($mb MB)" -ForegroundColor Green
+                return
+            }
+        } catch {
+            Write-Host "Loi: $($_.Exception.Message)" -ForegroundColor Yellow
+            if ($i -eq 3) {
+                throw "Tai that bai: $Url`nChua co GitHub Release v1.0? Tao tai: https://github.com/ThanhNe123/setupvps/releases/new?tag=v1.0"
+            }
+            Start-Sleep -Seconds 3
+        }
+    }
+}
+
 function Expand-Rar($Archive, $Dest) {
+    if (-not (Test-Path $Archive)) { throw "Khong tim thay file giai nen: $Archive (tai file that bai truoc do)" }
     New-Item -ItemType Directory -Path $Dest -Force | Out-Null
     $winrar = @("${env:ProgramFiles}\WinRAR\WinRAR.exe", "${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
     if ($winrar) {
@@ -57,7 +83,7 @@ function Resolve-VoltDir {
 
 Write-Host '=== [1/9] Tai VoltX.rar ===' -ForegroundColor Cyan
 $rarPath = Join-Path $env:TEMP 'VoltX.rar'
-Invoke-WebRequest -Uri "$baseUrl/VoltX.rar" -OutFile $rarPath -UseBasicParsing
+Download-File "$baseUrl/VoltX.rar" $rarPath
 if (Test-Path $voltDir) { Remove-Item $voltDir -Recurse -Force }
 Expand-Rar $rarPath $downloads
 Resolve-VoltDir
@@ -65,13 +91,13 @@ Write-Host "OK: $voltDir" -ForegroundColor Green
 
 Write-Host '=== [2/9] Tai LDPlayer ===' -ForegroundColor Cyan
 $ldPlayer = Join-Path $downloads 'LDPlayer_9.0.30_Lite_By_Mandu.exe'
-Invoke-WebRequest -Uri "$baseUrl/LDPlayer_9.0.30_Lite_By_Mandu.exe" -OutFile $ldPlayer -UseBasicParsing
+Download-File "$baseUrl/LDPlayer_9.0.30_Lite_By_Mandu.exe" $ldPlayer
 Write-Host "OK: $ldPlayer" -ForegroundColor Green
 
 Write-Host '=== [3/9] Tai Mem Reduct ===' -ForegroundColor Cyan
 $memRar = Join-Path $env:TEMP 'MemReduct.rar'
 if (Test-Path $memReductDir) { Remove-Item $memReductDir -Recurse -Force }
-Invoke-WebRequest -Uri "$baseUrl/MemReduct.rar" -OutFile $memRar -UseBasicParsing
+Download-File "$baseUrl/MemReduct.rar" $memRar
 Expand-Rar $memRar $desktop
 $memResolved = Get-ExtractedDir $desktop 'Mem Reduct'
 if ($memResolved -ne $memReductDir -and (Test-Path $memResolved)) {
@@ -84,19 +110,19 @@ Write-Host "OK: $memReductDir (da bat memreduct)" -ForegroundColor Green
 
 Write-Host '=== [4/9] Tai SetVirtualRAM.bat ===' -ForegroundColor Cyan
 $setVram = Join-Path $desktop 'SetVirtualRAM.bat'
-Invoke-WebRequest -Uri "$baseUrl/SetVirtualRAM.bat" -OutFile $setVram -UseBasicParsing
+Download-File "$baseUrl/SetVirtualRAM.bat" $setVram
 Write-Host "OK: $setVram" -ForegroundColor Green
 
 Write-Host '=== [5/9] Tai va chay tattb.bat (Admin) ===' -ForegroundColor Cyan
 $tattb = Join-Path $env:TEMP 'tattb.bat'
-Invoke-WebRequest -Uri "$baseUrl/tattb.bat" -OutFile $tattb -UseBasicParsing
+Download-File "$baseUrl/tattb.bat" $tattb
 Start-Process -FilePath $tattb -Verb RunAs
 Write-Host 'OK: da chay tattb.bat voi quyen Admin' -ForegroundColor Green
 
 Write-Host '=== [6/9] Tai webrb ===' -ForegroundColor Cyan
 $webrbRar = Join-Path $env:TEMP 'webrb.rar'
 if (Test-Path $webrbDir) { Remove-Item $webrbDir -Recurse -Force }
-Invoke-WebRequest -Uri "$baseUrl/webrb.rar" -OutFile $webrbRar -UseBasicParsing
+Download-File "$baseUrl/webrb.rar" $webrbRar
 Expand-Rar $webrbRar $desktop
 $webrbResolved = Get-ExtractedDir $desktop 'webrb'
 if ($webrbResolved -ne $webrbDir -and (Test-Path $webrbResolved)) {
@@ -107,7 +133,7 @@ Write-Host "OK: $webrbDir" -ForegroundColor Green
 Write-Host '=== [7/9] Tai gialap ===' -ForegroundColor Cyan
 $gialapRar = Join-Path $env:TEMP 'gialap.rar'
 if (Test-Path $gialapDir) { Remove-Item $gialapDir -Recurse -Force }
-Invoke-WebRequest -Uri "$baseUrl/gialap.rar" -OutFile $gialapRar -UseBasicParsing
+Download-File "$baseUrl/gialap.rar" $gialapRar
 Expand-Rar $gialapRar $desktop
 $gialapResolved = Get-ExtractedDir $desktop 'gialap'
 if ($gialapResolved -ne $gialapDir -and (Test-Path $gialapResolved)) {
