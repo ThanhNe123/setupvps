@@ -1,0 +1,1 @@
+iex (Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ThanhNe123/setupvps/main/setup-nova.ps1' -UseBasicParsing).Content
