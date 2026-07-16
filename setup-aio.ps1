@@ -19,10 +19,16 @@ function Test-Ready($Path, [long]$MinBytes = 1) {
     return (Test-Path $Path) -and ((Get-Item $Path).Length -ge $MinBytes)
 }
 
+function Format-FileSize([long]$Bytes) {
+    if ($Bytes -ge 1MB) { return "$([math]::Round($Bytes / 1MB, 2)) MB" }
+    if ($Bytes -ge 1KB) { return "$([math]::Round($Bytes / 1KB, 2)) KB" }
+    return "$Bytes B"
+}
+
 function Download-File($Url, $OutFile, [long]$MinBytes = 1) {
     if (Test-Ready $OutFile $MinBytes) {
-        $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
-        Write-Host "Da co: $OutFile ($mb MB) - bo qua tai" -ForegroundColor DarkYellow
+        $size = Format-FileSize (Get-Item $OutFile).Length
+        Write-Host "Da co: $OutFile ($size) - bo qua tai" -ForegroundColor DarkYellow
         return $false
     }
     $ProgressPreference = 'SilentlyContinue'
@@ -36,8 +42,8 @@ function Download-File($Url, $OutFile, [long]$MinBytes = 1) {
             if (Test-Path $OutFile) { Remove-Item $OutFile -Force }
             Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -Headers $headers -TimeoutSec 600 -MaximumRedirection 10
             if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
-                $mb = [math]::Round((Get-Item $OutFile).Length / 1MB, 2)
-                Write-Host "OK: $OutFile ($mb MB)" -ForegroundColor Green
+                $size = Format-FileSize (Get-Item $OutFile).Length
+                Write-Host "OK: $OutFile ($size)" -ForegroundColor Green
                 return $true
             }
         } catch {
@@ -53,11 +59,15 @@ function Download-File($Url, $OutFile, [long]$MinBytes = 1) {
 function Expand-Rar($Archive, $Dest) {
     if (-not (Test-Path $Archive)) { throw "Khong tim thay file giai nen: $Archive (tai file that bai truoc do)" }
     New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    $outDir = ($Dest.TrimEnd('\') + '\')
+
     $winrar = @("${env:ProgramFiles}\WinRAR\WinRAR.exe", "${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
     if ($winrar) {
-        & $winrar x -y $Archive ($Dest + '\')
-        if ($LASTEXITCODE -eq 0) { return }
+        $proc = Start-Process -FilePath $winrar -ArgumentList @('x', '-y', $Archive, $outDir) -Wait -PassThru -WindowStyle Hidden
+        if ($proc.ExitCode -eq 0) { return }
+        Write-Host "WinRAR loi (exit $($proc.ExitCode)), thu 7-Zip..." -ForegroundColor Yellow
     }
+
     $seven = @("${env:ProgramFiles}\7-Zip\7z.exe", "${env:ProgramFiles(x86)}\7-Zip\7z.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
     if (-not $seven) {
         Write-Host 'Dang cai 7-Zip...' -ForegroundColor Yellow
@@ -67,15 +77,21 @@ function Expand-Rar($Archive, $Dest) {
         $seven = @("${env:ProgramFiles}\7-Zip\7z.exe", "${env:ProgramFiles(x86)}\7-Zip\7z.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
     }
     if (-not $seven) { throw 'Khong giai nen duoc RAR - hay cai WinRAR hoac 7-Zip' }
-    & $seven x -y $Archive "-o$Dest"
-    if ($LASTEXITCODE -ne 0) { throw "Giai nen that bai: $Archive" }
+    $proc = Start-Process -FilePath $seven -ArgumentList @('x', '-y', $Archive, "-o$outDir") -Wait -PassThru -WindowStyle Hidden
+    if ($proc.ExitCode -ne 0) { throw "Giai nen that bai: $Archive (exit $($proc.ExitCode))" }
 }
 
-function Resolve-Folder($searchRoot, $targetDir, $markerFile) {
+function Resolve-Folder($searchRoots, $targetDir, $markerFile) {
     $markerPath = Join-Path $targetDir $markerFile
     if (Test-Path $markerPath) { return $targetDir }
-    $found = Get-ChildItem -Path $searchRoot -Filter $markerFile -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $found) { throw "Khong tim thay $markerFile trong $searchRoot" }
+    $roots = @($searchRoots) | Where-Object { $_ } | Select-Object -Unique
+    $found = $null
+    foreach ($root in $roots) {
+        if (-not (Test-Path $root)) { continue }
+        $found = Get-ChildItem -Path $root -Filter $markerFile -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { break }
+    }
+    if (-not $found) { throw "Khong tim thay $markerFile (da tim: $($roots -join ', '))" }
     $srcDir = $found.DirectoryName
     if ($srcDir -ne $targetDir) {
         if (Test-Path $targetDir) { Remove-Item $targetDir -Recurse -Force }
@@ -126,7 +142,7 @@ if (Test-Path $memExe) {
     if (Test-Path $memReductDir) { Remove-Item $memReductDir -Recurse -Force }
     Download-File "$baseUrl/MemReduct.rar" $memRar 100000 | Out-Null
     Expand-Rar $memRar $desktop
-    Resolve-Folder $desktop $memReductDir 'memreduct.exe' | Out-Null
+    Resolve-Folder @($desktop, $downloads, $env:USERPROFILE, $env:TEMP) $memReductDir 'memreduct.exe' | Out-Null
 }
 if (-not (Get-Process -Name 'memreduct' -ErrorAction SilentlyContinue)) {
     Start-Process -FilePath $memExe -WorkingDirectory $memReductDir
@@ -135,12 +151,12 @@ Write-Host "OK: $memReductDir (da bat memreduct)" -ForegroundColor Green
 
 Write-Host '=== [4/9] Tai SetVirtualRAM.bat ===' -ForegroundColor Cyan
 $setVram = Join-Path $desktop 'SetVirtualRAM.bat'
-Download-File "$baseUrl/SetVirtualRAM.bat" $setVram
+Download-File "$baseUrl/SetVirtualRAM.bat" $setVram | Out-Null
 Write-Host "OK: $setVram" -ForegroundColor Green
 
 Write-Host '=== [5/9] Tai va chay tattb.bat (Admin) ===' -ForegroundColor Cyan
 $tattb = Join-Path $env:TEMP 'tattb.bat'
-Download-File "$baseUrl/tattb.bat" $tattb
+Download-File "$baseUrl/tattb.bat" $tattb | Out-Null
 Start-Process -FilePath $tattb -Verb RunAs
 Write-Host 'OK: da chay tattb.bat voi quyen Admin' -ForegroundColor Green
 
@@ -152,7 +168,7 @@ if (Test-Path (Join-Path $webrbDir 'client_web.exe')) {
     if (Test-Path $webrbDir) { Remove-Item $webrbDir -Recurse -Force }
     Download-File "$baseUrl/webrb.rar" $webrbRar 10000000 | Out-Null
     Expand-Rar $webrbRar $desktop
-    Resolve-Folder $desktop $webrbDir 'client_web.exe' | Out-Null
+    Resolve-Folder @($desktop, $downloads, $env:USERPROFILE, $env:TEMP) $webrbDir 'client_web.exe' | Out-Null
 }
 Write-Host "OK: $webrbDir" -ForegroundColor Green
 
@@ -164,7 +180,7 @@ if (Test-Path (Join-Path $gialapDir 'client_ld.exe')) {
     if (Test-Path $gialapDir) { Remove-Item $gialapDir -Recurse -Force }
     Download-File "$baseUrl/gialap.rar" $gialapRar 10000000 | Out-Null
     Expand-Rar $gialapRar $desktop
-    Resolve-Folder $desktop $gialapDir 'client_ld.exe' | Out-Null
+    Resolve-Folder @($desktop, $downloads, $env:USERPROFILE, $env:TEMP) $gialapDir 'client_ld.exe' | Out-Null
 }
 Write-Host "OK: $gialapDir" -ForegroundColor Green
 
