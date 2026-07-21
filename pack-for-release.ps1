@@ -30,6 +30,18 @@ Copy-Item (Join-Path $root 'LDPlayer_9.0.30_Lite_By_Mandu.exe') $out -Force
 Copy-Item (Join-Path $root 'SetVirtualRAM.bat') $out -Force
 Copy-Item (Join-Path $root 'tattb.bat') $out -Force
 
+$novaSrc = Join-Path $root 'test-nova'
+if (Test-Path (Join-Path $novaSrc 'nova.exe')) {
+    Write-Host 'Dong goi Nova-Release.rar...'
+    Push-Location $novaSrc
+    & $winrar a -r (Join-Path $out 'Nova-Release.rar') '*'
+    Pop-Location
+} elseif (Test-Path (Join-Path $out 'Nova-Release.rar')) {
+    Write-Host 'Giu Nova-Release.rar co san trong releases/'
+} else {
+    Write-Host 'Canh bao: chua co test-nova/ hoac Nova-Release.rar' -ForegroundColor Yellow
+}
+
 Write-Host ''
 Write-Host 'Upload tat ca file trong releases/ len GitHub:' -ForegroundColor Cyan
 Write-Host 'https://github.com/ThanhNe123/setupvps/releases/new?tag=v1.0' -ForegroundColor Yellow
